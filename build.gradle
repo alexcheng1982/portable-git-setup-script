@@ -1,0 +1,201 @@
+
+gitDir = 'git'
+gitUserName = 'gituser'
+sshPassword = 'gituser'
+gitUserHome = "${gitDir}/home/${gitUserName}"
+sshHome = "${gitUserHome}/.ssh"
+sshKeyLabel = 'My SSH key'
+
+sevenZipDir = hasProperty('7zipDir') ? project['7zipDir'] : 'C:\\Program Files\\7-Zip'
+
+
+task prepareGitBinary << {
+	def binaryDir = file('git')
+	if (binaryDir.exists()) {
+		return
+	}
+	def tempDir = System.getProperty('java.io.tmpdir')
+	def binaryFile = new File("${tempDir}", 'git.7z');
+	if (!binaryFile.exists()) {
+		logger.info 'Download git binary file'
+		ant.get(src : 'http://msysgit.googlecode.com/files/PortableGit-1.7.11-preview20120710.7z', dest : binaryFile.absolutePath, verbose : 'true')
+	}
+	binaryDir.mkdir()
+	logger.info 'Unzip git binary file'
+	println "${sevenZipDir}/7z.exe"
+	ant.exec(executable : "${sevenZipDir}/7z.exe") {
+		arg(value : 'x')
+		arg(value : '-r')
+		arg(value : "-o${binaryDir}")
+		arg(value : "-y")
+		arg(value : "${binaryFile}")
+	}
+}
+
+task config << {
+	file('user.conf').withReader { reader -> 
+  		def userProps = new Properties() 
+  		userProps.load(reader) 
+  		userProps.each {
+  			project.set(it.key, it.value)
+  		}
+	} 
+
+}
+
+task modifyGit(dependsOn: [prepareGitBinary, config]) << {
+	if (file("${gitUserHome}").exists()) {
+		return
+	}
+
+	def profileFile = file("${gitDir}/etc/profile")
+	def profile = profileFile.getText()
+	profile = profile.replaceAll(/(?m)^HOME=(.*)$/, "HOME=/home/${gitUserName}")
+	profileFile.setText profile
+	file("${gitUserHome}").mkdirs()
+	file("${gitUserHome}/.bashrc").setText '''\
+SSH_ENV="$HOME/.ssh/environment"
+  
+# start the ssh-agent
+function start_agent {
+    echo "Initializing new SSH agent..."
+    # spawn ssh-agent
+    ssh-agent | sed 's/^echo/#echo/' > "$SSH_ENV"
+    echo succeeded
+    chmod 600 "$SSH_ENV"
+    . "$SSH_ENV" > /dev/null
+    ssh-add
+}
+  
+# test for identities
+function test_identities {
+    # test whether standard identities have been added to the agent already
+    ssh-add -l | grep "The agent has no identities" > /dev/null
+    if [ $? -eq 0 ]; then
+        ssh-add
+        # $SSH_AUTH_SOCK broken so we start a new proper agent
+        if [ $? -eq 2 ];then
+            start_agent
+        fi
+    fi
+}
+  
+# check for running ssh-agent with proper $SSH_AGENT_PID
+if [ -n "$SSH_AGENT_PID" ]; then
+    ps -ef | grep "$SSH_AGENT_PID" | grep ssh-agent > /dev/null
+    if [ $? -eq 0 ]; then
+    test_identities
+    fi
+# if $SSH_AGENT_PID is not properly set, we might be able to load one from
+# $SSH_ENV
+else
+    if [ -f "$SSH_ENV" ]; then
+    . "$SSH_ENV" > /dev/null
+    fi
+    ps -ef | grep "$SSH_AGENT_PID" | grep -v grep | grep ssh-agent > /dev/null
+    if [ $? -eq 0 ]; then
+        test_identities
+    else
+        start_agent
+    fi
+fi
+'''
+
+	file("${gitUserHome}/.gitconfig").setText """\
+[user]
+	name = ${project["git_name"]}
+	email = ${project["git_email"]}
+"""
+}
+
+task createSSHKey(dependsOn: config) << {
+	if (file("${sshHome}/id_rsa").exists()) {
+		return
+	}
+	file("${sshHome}").mkdir()
+	def email = project['git_email']
+	ant.exec(executable : "${gitDir}/bin/ssh-keygen.exe") {
+		arg(value : '-N')
+		arg(value : "${sshPassword}")
+		arg(value : '-f')
+		arg(value : "${sshHome}/id_rsa")
+		arg(value : '-C')
+		arg(value : "${email}")
+	}
+}
+
+def encode(str) {
+	URLEncoder.encode(str, 'UTF-8')
+}
+
+def setSSHConfig(host) {
+	file("${sshHome}/config").setText """\
+Host ${host}
+  User ${project["git_email"]}
+  IdentityFile ~/.ssh/id_rsa	
+"""	
+}
+
+
+task installSSHKey_bitbucket(dependsOn: [createSSHKey, modifyGit]) << {
+	setSSHConfig('bitbucket.org')
+
+	def urlString = "https://api.bitbucket.org/1.0/users/${project.git_email}/ssh-keys"
+	def key = file("${sshHome}/id_rsa.pub").getText()
+	key = encode(key)
+	def email = project['git_email'] 
+	def password = new String(System.console().readPassword("[%s]", "Input your password:"))
+	def accountname = encode("${email}")
+	def label = encode("${sshKeyLabel}")
+	def queryString = "accountname=${accountname}&label=${label}&key=${key}"
+	def url = new URL(urlString)
+    def connection = url.openConnection()
+    def authString = "${email}:${password}".getBytes().encodeBase64().toString()
+	connection.setRequestProperty("Authorization", "Basic ${authString}")
+    connection.setRequestMethod("POST")
+    connection.doOutput = true
+
+    def writer = new OutputStreamWriter(connection.outputStream)
+    writer.write(queryString)
+    writer.flush()
+    writer.close()
+    connection.connect()
+
+    println connection.content.text
+}
+
+task installSSHKey_github(dependsOn: [createSSHKey, modifyGit]) << {
+	setSSHConfig('github.com')
+
+	def urlString = "https://api.github.com/user/keys"
+	def key = file("${sshHome}/id_rsa.pub").getText()
+	//key = encode(key)
+	def email = project['git_email'] 
+	def password = new String(System.console().readPassword("[%s]", "Input your password:"))
+	def accountname = encode("${email}")
+	def label = "${sshKeyLabel}"
+	def builder = new groovy.json.JsonBuilder()
+	builder ([
+		title : "${label}",
+		key : "${key}"
+	])
+	//def json = "{\"title\":\"${label}\", \"key\":\"${key}\"}"
+	def json = builder.toString()
+	println json
+	def url = new URL(urlString)
+    def connection = url.openConnection()
+    def authString = "${email}:${password}".getBytes().encodeBase64().toString()
+	connection.setRequestProperty("Authorization", "Basic ${authString}")
+	connection.setRequestProperty('Content-Type', 'application/json')
+    connection.setRequestMethod("POST")
+    connection.doOutput = true
+
+    def writer = new OutputStreamWriter(connection.outputStream)
+    writer.write(json)
+    writer.flush()
+    writer.close()
+    connection.connect()
+
+    println connection.content.text
+}
+
