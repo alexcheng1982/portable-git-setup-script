@@ -149,19 +149,19 @@ task installSSHKey_bitbucket(dependsOn: [createSSHKey, modifyGit]) << {
 	def label = encode("${sshKeyLabel}")
 	def queryString = "accountname=${accountname}&label=${label}&key=${key}"
 	def url = new URL(urlString)
-    def connection = url.openConnection()
-    def authString = "${email}:${password}".getBytes().encodeBase64().toString()
+	def connection = url.openConnection()
+	def authString = "${email}:${password}".getBytes().encodeBase64().toString()
 	connection.setRequestProperty("Authorization", "Basic ${authString}")
-    connection.setRequestMethod("POST")
-    connection.doOutput = true
+	connection.setRequestMethod("POST")
+	connection.doOutput = true
 
-    def writer = new OutputStreamWriter(connection.outputStream)
-    writer.write(queryString)
-    writer.flush()
-    writer.close()
-    connection.connect()
+	def writer = new OutputStreamWriter(connection.outputStream)
+	writer.write(queryString)
+	writer.flush()
+	writer.close()
+	connection.connect()
 
-    println connection.content.text
+	println connection.content.text
 }
 
 task installSSHKey_github(dependsOn: [createSSHKey, modifyGit]) << {
@@ -179,21 +179,20 @@ task installSSHKey_github(dependsOn: [createSSHKey, modifyGit]) << {
 		key : "${key}"
 	])
 	def json = builder.toString()
-	println json
 	def url = new URL(urlString)
-    def connection = url.openConnection()
-    def authString = "${email}:${password}".getBytes().encodeBase64().toString()
+	def connection = url.openConnection()
+	def authString = "${email}:${password}".getBytes().encodeBase64().toString()
 	connection.setRequestProperty("Authorization", "Basic ${authString}")
 	connection.setRequestProperty('Content-Type', 'application/json')
-    connection.setRequestMethod("POST")
-    connection.doOutput = true
+	connection.setRequestMethod("POST")
+	connection.doOutput = true
 
-    def writer = new OutputStreamWriter(connection.outputStream)
-    writer.write(json)
-    writer.flush()
-    writer.close()
-    connection.connect()
+	def writer = new OutputStreamWriter(connection.outputStream)
+	writer.write(json)
+	writer.flush()
+	writer.close()
+	connection.connect()
 
-    println connection.content.text
+	println connection.content.text
 }
 
