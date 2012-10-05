@@ -169,7 +169,6 @@ task installSSHKey_github(dependsOn: [createSSHKey, modifyGit]) << {
 
 	def urlString = "https://api.github.com/user/keys"
 	def key = file("${sshHome}/id_rsa.pub").getText()
-	//key = encode(key)
 	def email = project['git_email'] 
 	def password = new String(System.console().readPassword("[%s]", "Input your password:"))
 	def accountname = encode("${email}")
@@ -179,7 +178,6 @@ task installSSHKey_github(dependsOn: [createSSHKey, modifyGit]) << {
 		title : "${label}",
 		key : "${key}"
 	])
-	//def json = "{\"title\":\"${label}\", \"key\":\"${key}\"}"
 	def json = builder.toString()
 	println json
 	def url = new URL(urlString)
