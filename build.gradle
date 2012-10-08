@@ -22,7 +22,6 @@ task prepareGitBinary << {
 	}
 	binaryDir.mkdir()
 	logger.info 'Unzip git binary file'
-	println "${sevenZipDir}/7z.exe"
 	ant.exec(executable : "${sevenZipDir}/7z.exe") {
 		arg(value : 'x')
 		arg(value : '-r')
@@ -43,7 +42,7 @@ task config << {
 
 }
 
-task modifyGit(dependsOn: [prepareGitBinary, config]) << {
+task modifyGit(dependsOn: [config, prepareGitBinary]) << {
 	if (file("${gitUserHome}").exists()) {
 		return
 	}
@@ -108,7 +107,7 @@ fi
 """
 }
 
-task createSSHKey(dependsOn: config) << {
+task createSSHKey(dependsOn: [config, modifyGit]) << {
 	if (file("${sshHome}/id_rsa").exists()) {
 		return
 	}
@@ -137,7 +136,7 @@ Host ${host}
 }
 
 
-task installSSHKey_bitbucket(dependsOn: [createSSHKey, modifyGit]) << {
+task installSSHKey_bitbucket(dependsOn: [config, createSSHKey]) << {
 	setSSHConfig('bitbucket.org')
 
 	def urlString = "https://api.bitbucket.org/1.0/users/${project.git_email}/ssh-keys"
@@ -164,7 +163,7 @@ task installSSHKey_bitbucket(dependsOn: [createSSHKey, modifyGit]) << {
 	println connection.content.text
 }
 
-task installSSHKey_github(dependsOn: [createSSHKey, modifyGit]) << {
+task installSSHKey_github(dependsOn: [config, createSSHKey]) << {
 	setSSHConfig('github.com')
 
 	def urlString = "https://api.github.com/user/keys"
